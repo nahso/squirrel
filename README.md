@@ -1,110 +1,36 @@
-    鼠鬚管
-    爲物雖微情不淺
-    新詩醉墨時一揮
-    別後寄我無辭遠
-
-    　　　——歐陽修
-
-今由　[中州韻輸入法引擎／Rime Input Method Engine](https://rime.im)
-及其他開源技術強力驅動
-
-【鼠鬚管】輸入法
+【鼠鬚管】輸入法（Fork）
 ===
-[![Download](https://img.shields.io/github/v/release/rime/squirrel)](https://github.com/rime/squirrel/releases/latest)
-[![Build Status](https://github.com/rime/squirrel/actions/workflows/commit-ci.yml/badge.svg)](https://github.com/rime/squirrel/actions/workflows)
-[![GitHub Tag](https://img.shields.io/github/tag/rime/squirrel.svg)](https://github.com/rime/squirrel)
 
-式恕堂 版權所無
+本倉庫是 [rime/squirrel](https://github.com/rime/squirrel) 的 fork，基於官方 **1.1.2** 版本，並額外包含一項針對終端全角標點輸入的修復。
 
-授權條款：[GPL v3](https://www.gnu.org/licenses/gpl-3.0.en.html)
+完整的使用說明、安裝步驟與定製文檔，請參閱上游項目的 [README.md](https://github.com/rime/squirrel/blob/master/README.md)。
 
-項目主頁：[rime.im](https://rime.im)
+## 本 fork 的改動
 
-您可能還需要 Rime 用於其他操作系統的發行版：
+### 問題
 
-  * 【中州韻】（ibus-rime、fcitx-rime）用於 Linux
-  * 【小狼毫】用於 Windows
+在 VSCode 內置終端、Alacritty、Neovide 等基於 **xterm.js** 的應用中，使用鼠鬚管輸入中文全角標點（如 `。`、`，`、`《`、`》` 等）時，字符無法正確送達應用。這是客戶端對 US 鍵盤佈局下中文標點處理不當所致；macOS 系統拼音輸入法則能正常工作。
 
-安裝輸入法
----
+相關討論：
 
-本品適用於 macOS 13.0+
+- [rime/squirrel#827](https://github.com/rime/squirrel/issues/827)
+- [fcitx/fcitx5-macos#223](https://github.com/fcitx/fcitx5-macos/issues/223) — 在 VSCode 內置終端和 Neovide 中無法輸入中文句號、書名號等全角標點
 
-初次安裝，如果在部份應用程序中打不出字，請註銷並重新登錄。
+### 修復思路
 
-使用輸入法
----
+本修復借鑒了 [fcitx/fcitx5-macos#348](https://github.com/fcitx/fcitx5-macos/pull/348) 的做法：在應用層尚未正確處理該問題之前，由輸入法臨時繞過。
 
-選取輸入法指示器菜單裏的【ㄓ】字樣圖標，開始用鼠鬚管寫字。
-通過快捷鍵 `` Ctrl+` `` 或 `F4` 呼出方案選單、切換輸入方式。
+1. **切換鍵盤佈局**：當 Rime 方案啟用中文標點（`ascii_punct` 為 `false`）且用戶配置為默認/US 佈局時，將客戶端鍵盤佈局覆寫為 `com.apple.keylayout.PinyinKeyboard`（與系統拼音相同）。這樣 `NSEvent` 送出的標點字符已是中文全角形式，終端等客戶端可以正確接收。
 
-定製輸入法
----
+2. **反向映射 keysym**：佈局切換後，Rime 引擎收到的 keysym 也會變成中文標點，而 Rime 仍期望 ASCII keysym。因此在 `MacOSKeyCodes.swift` 中，當 `PinyinKeyboard` 佈局生效時，將標點鍵的 keysym 映射回對應的 ASCII 值，供 Rime 正常處理。
 
-定製方法，請參考線上 [幫助文檔](https://rime.im/docs/)。
+3. **動態跟隨方案狀態**：在 session 創建、狀態更新等時機調用 `overrideKeyboardLayoutIfNeeded()`，根據當前 `ascii_punct` 選項自動切換佈局。
 
-使用系統輸入法菜單：
+### 已知限制
 
-  * 選中「在線文檔」可打開以上網址
-  * 編輯用戶設定後，選擇「重新部署」以令修改生效
+- 雙引號 `"` 等部分標點尚未覆蓋
+- 非 ABC/US 佈局不受影響，仍按用戶配置使用
 
-安裝輸入方案
----
+## 授權
 
-使用 [/plum/](https://github.com/rime/plum) 配置管理器獲取更多輸入方案。
-
-致謝
----
-
-輸入方案設計：
-
-  * 【朙月拼音】系列
-
-    感謝 CC-CEDICT、Android 拼音、新酷音、opencc 等開源項目
-
-程序設計：
-
-  * 佛振
-  * Linghua Zhang
-  * Chongyu Zhu
-  * 雪齋
-  * faberii
-  * Chun-wei Kuo
-  * Junlu Cheng
-  * Jak Wings
-  * xiehuc
-
-美術：
-
-  * 圖標設計 佛振、梁海、雨過之後
-  * 配色方案 Aben、Chongyu Zhu、skoj、Superoutman、佛振、梁海
-
-本品引用了以下開源軟件：
-
-  * Boost C++ Libraries  (Boost Software License)
-  * capnproto (MIT License)
-  * darts-clone  (New BSD License)
-  * google-glog  (New BSD License)
-  * Google Test  (New BSD License)
-  * LevelDB  (New BSD License)
-  * librime  (New BSD License)
-  * OpenCC / 開放中文轉換  (Apache License 2.0)
-  * plum / 東風破 (GNU Lesser General Public License 3.0)
-  * Sparkle  (MIT License)
-  * UTF8-CPP  (Boost Software License)
-  * yaml-cpp  (MIT License)
-
-感謝王公子捐贈開發用機。
-
-問題與反饋
----
-
-發現程序有 BUG，或建議，或感想，請反饋到 [Rime 代碼之家討論區](https://github.com/rime/home/discussions)
-
-聯繫方式
----
-
-技術交流，歡迎光臨 [Rime 代碼之家](https://github.com/rime/home)，
-或致信 Rime 開發者 <rimeime@gmail.com>。
-
-謝謝
+與上游相同，授權條款：[GPL v3](https://www.gnu.org/licenses/gpl-3.0.en.html)
