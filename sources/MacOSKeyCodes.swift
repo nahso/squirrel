@@ -9,6 +9,9 @@ import Carbon
 import AppKit
 
 struct SquirrelKeycode {
+  // When com.apple.keylayout.PinyinKeyboard is active, punctuation keys produce
+  // Chinese characters for the client app but Rime still expects ASCII keysyms.
+  static var pinyinKeyboard = false
 
   static func osxModifiersToRime(modifiers: NSEvent.ModifierFlags) -> UInt32 {
     var ret: UInt32 = 0
@@ -30,9 +33,17 @@ struct SquirrelKeycode {
     return ret
   }
 
-  static func osxKeycodeToRime(keycode: UInt16, keychar: Character?, shift: Bool, caps: Bool) -> UInt32 {
+  static func osxKeycodeToRime(keycode: UInt16, keychar: Character?, shift: Bool, caps: Bool,
+                               modifiers: NSEvent.ModifierFlags = []) -> UInt32 {
     if let code = keycodeMappings[Int(keycode)] {
       return UInt32(code)
+    }
+
+    // Map Chinese punctuation from PinyinKeyboard back to ASCII for Rime.
+    if pinyinKeyboard,
+       modifiers.intersection([.control, .option, .command]).isEmpty,
+       let mapping = pinyinCharMappings.first(where: { $0.keycode == Int(keycode) }) {
+      return UInt32(shift ? mapping.shifted : mapping.ascii)
     }
 
     if let keychar = keychar, keychar.isASCII, let codeValue = keychar.unicodeScalars.first?.value {
@@ -146,6 +157,30 @@ struct SquirrelKeycode {
     kVK_JIS_KeypadComma: XK_comma,
     kVK_JIS_Eisu: XK_Eisu_Shift,
     kVK_JIS_Kana: XK_Kana_Shift
+  ]
+
+  private static let pinyinCharMappings: [(keycode: Int, ascii: Int32, shifted: Int32)] = [
+    (kVK_ANSI_0, XK_0, XK_parenright),
+    (kVK_ANSI_1, XK_1, XK_exclam),
+    (kVK_ANSI_2, XK_2, XK_at),
+    (kVK_ANSI_3, XK_3, XK_numbersign),
+    (kVK_ANSI_4, XK_4, XK_dollar),
+    (kVK_ANSI_5, XK_5, XK_percent),
+    (kVK_ANSI_6, XK_6, XK_asciicircum),
+    (kVK_ANSI_7, XK_7, XK_ampersand),
+    (kVK_ANSI_8, XK_8, XK_asterisk),
+    (kVK_ANSI_9, XK_9, XK_parenleft),
+    (kVK_ANSI_Grave, XK_grave, XK_asciitilde),
+    (kVK_ANSI_Backslash, XK_backslash, XK_bar),
+    (kVK_ANSI_LeftBracket, XK_bracketleft, XK_braceleft),
+    (kVK_ANSI_RightBracket, XK_bracketright, XK_braceright),
+    (kVK_ANSI_Comma, XK_comma, XK_less),
+    (kVK_ANSI_Period, XK_period, XK_greater),
+    (kVK_ANSI_Equal, XK_equal, XK_plus),
+    (kVK_ANSI_Minus, XK_minus, XK_underscore),
+    (kVK_ANSI_Quote, XK_apostrophe, XK_quotedbl),
+    (kVK_ANSI_Semicolon, XK_semicolon, XK_colon),
+    (kVK_ANSI_Slash, XK_slash, XK_question)
   ]
 
   private static let additionalCodeMappings: [Int: Int32] = [

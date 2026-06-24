@@ -28,6 +28,7 @@ final class SquirrelInputController: IMKInputController {
   private var chordTimer: Timer?
   private var chordDuration: TimeInterval = 0
   private var currentApp: String = ""
+  private var lastKeyboardLayout: String?
 
   // swiftlint:disable:next cyclomatic_complexity
   override func handle(_ event: NSEvent!, client sender: Any!) -> Bool {
@@ -64,7 +65,8 @@ final class SquirrelInputController: IMKInputController {
       var rimeModifiers: UInt32 = SquirrelKeycode.osxModifiersToRime(modifiers: modifiers)
       // For flags-changed event, keyCode is available since macOS 10.15
       // (#715)
-      let rimeKeycode: UInt32 = SquirrelKeycode.osxKeycodeToRime(keycode: event.keyCode, keychar: nil, shift: false, caps: false)
+      let rimeKeycode: UInt32 = SquirrelKeycode.osxKeycodeToRime(keycode: event.keyCode, keychar: nil, shift: false, caps: false,
+                                                                 modifiers: modifiers)
 
       if changes.contains(.capsLock) {
         // NOTE: rime assumes XK_Caps_Lock to be sent before modifier changes,
@@ -110,7 +112,8 @@ final class SquirrelInputController: IMKInputController {
       if let char = keyChars?.first {
         let rimeKeycode = SquirrelKeycode.osxKeycodeToRime(keycode: keyCode, keychar: char,
                                                            shift: modifiers.contains(.shift),
-                                                           caps: modifiers.contains(.capsLock))
+                                                           caps: modifiers.contains(.capsLock),
+                                                           modifiers: modifiers)
         if rimeKeycode != 0 {
           let rimeModifiers = SquirrelKeycode.osxModifiersToRime(modifiers: modifiers)
           handled = processKey(rimeKeycode, modifiers: rimeModifiers)
@@ -170,17 +173,7 @@ final class SquirrelInputController: IMKInputController {
   override func activateServer(_ sender: Any!) {
     self.client ?= sender as? IMKTextInput
     // print("[DEBUG] activateServer:")
-    var keyboardLayout = NSApp.squirrelAppDelegate.config?.getString("keyboard_layout") ?? ""
-    if keyboardLayout == "last" || keyboardLayout == "" {
-      keyboardLayout = ""
-    } else if keyboardLayout == "default" {
-      keyboardLayout = "com.apple.keylayout.ABC"
-    } else if !keyboardLayout.hasPrefix("com.apple.keylayout.") {
-      keyboardLayout = "com.apple.keylayout.\(keyboardLayout)"
-    }
-    if keyboardLayout != "" {
-      client?.overrideKeyboard(withKeyboardNamed: keyboardLayout)
-    }
+    overrideKeyboardLayoutIfNeeded()
     preedit = ""
   }
 
@@ -358,6 +351,45 @@ private extension SquirrelInputController {
         rimeAPI.set_option(session, key, value)
       }
     }
+    overrideKeyboardLayoutIfNeeded()
+  }
+
+  // HACK: xterm.js-based terminals (VSCode, Alacritty, Neovide, etc.) mishandle
+  // Chinese punctuation from US keyboard layout. System Pinyin uses
+  // com.apple.keylayout.PinyinKeyboard so event.key is already Chinese punctuation.
+  func overrideKeyboardLayoutIfNeeded() {
+    guard session != 0 else { return }
+
+    let configLayout = NSApp.squirrelAppDelegate.config?.getString("keyboard_layout") ?? ""
+    let chinesePunct = !rimeAPI.get_option(session, "ascii_punct")
+    var keyboardLayout: String?
+
+    if configLayout == "last" || configLayout == "" {
+      keyboardLayout = chinesePunct ? "com.apple.keylayout.PinyinKeyboard" : nil
+    } else if configLayout == "default" {
+      keyboardLayout = chinesePunct ? "com.apple.keylayout.PinyinKeyboard" : "com.apple.keylayout.ABC"
+    } else {
+      let layoutName = configLayout.hasPrefix("com.apple.keylayout.")
+        ? String(configLayout.dropFirst("com.apple.keylayout.".count))
+        : configLayout
+      let fullName = configLayout.hasPrefix("com.apple.keylayout.")
+        ? configLayout
+        : "com.apple.keylayout.\(configLayout)"
+      if layoutName == "ABC" || layoutName == "U.S." {
+        keyboardLayout = chinesePunct ? "com.apple.keylayout.PinyinKeyboard" : fullName
+      } else {
+        keyboardLayout = fullName
+      }
+    }
+
+    SquirrelKeycode.pinyinKeyboard = keyboardLayout?.contains("PinyinKeyboard") == true
+
+    if keyboardLayout != lastKeyboardLayout {
+      lastKeyboardLayout = keyboardLayout
+      if let keyboardLayout {
+        client?.overrideKeyboard(withKeyboardNamed: keyboardLayout)
+      }
+    }
   }
 
   func destroySession() {
@@ -427,6 +459,8 @@ private extension SquirrelInputController {
   func rimeUpdate() {
     // print("[DEBUG] rimeUpdate")
     rimeConsumeCommittedText()
+
+    overrideKeyboardLayoutIfNeeded()
 
     var status = RimeStatus_stdbool.rimeStructInit()
     if rimeAPI.get_status(session, &status) {
